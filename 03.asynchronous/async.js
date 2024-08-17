@@ -24,45 +24,21 @@ function callbackNoError() {
 
   db.run(
     "CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT NOT NULL UNIQUE)",
-    (err) => {
-      if (err) {
-        console.error(err.message);
-        return;
-      }
-
+    () => {
       db.run(
         "INSERT INTO books (title) VALUES (?)",
         ["JavaScript"],
-        function (err) {
-          if (err) {
-            console.error(err.message);
-            return;
-          }
-
+        function () {
           console.log("Inserted record with ID:", this.lastID);
 
-          db.get(
-            "SELECT * FROM books WHERE id = ?",
-            [this.lastID],
-            (err, row) => {
-              if (err) {
-                console.error(err.message);
-                return;
-              }
+          db.get("SELECT * FROM books WHERE id = ?", [this.lastID], (row) => {
+            console.log("Fetched record:", row);
 
-              console.log("Fetched record:", row);
-
-              db.run("DROP TABLE books", (err) => {
-                if (err) {
-                  console.error(err.message);
-                  return;
-                }
-
-                console.log("Table dropped.");
-                db.close();
-              });
-            },
-          );
+            db.run("DROP TABLE books", () => {
+              console.log("Table dropped.");
+              db.close();
+            });
+          });
         },
       );
     },
@@ -77,7 +53,7 @@ function callbackWithError() {
     "CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT NOT NULL UNIQUE)",
     (err) => {
       if (err) {
-        console.error(err.message);
+        console.error("Error during table creation:", err.message);
         return;
       }
 
@@ -86,7 +62,11 @@ function callbackWithError() {
         ["JavaScript"],
         function (err) {
           if (err) {
-            console.error(err.message);
+            if (err.code === "SQLITE_CONSTRAINT") {
+              console.error("Unique constraint error:", err.message);
+            } else {
+              console.error("Unexpected error during insert:", err.message);
+            }
             return;
           }
 
@@ -97,7 +77,12 @@ function callbackWithError() {
             ["JavaScript"],
             function (err) {
               if (err) {
-                console.error(err.message);
+                if (err.code === "SQLITE_CONSTRAINT") {
+                  console.error("Unique constraint error:", err.message);
+                } else {
+                  console.error("Unexpected error during insert:", err.message);
+                }
+                return;
               }
 
               db.get(
@@ -105,7 +90,7 @@ function callbackWithError() {
                 [""],
                 (err, row) => {
                   if (err) {
-                    console.error(err.message);
+                    console.error("Error during SELECT:", err.message);
                   } else if (!row) {
                     console.error("存在しないタイトル");
                   } else {
@@ -114,7 +99,7 @@ function callbackWithError() {
 
                   db.run("DROP TABLE books", (err) => {
                     if (err) {
-                      console.error(err.message);
+                      console.error("Error during table drop:", err.message);
                       return;
                     }
 
@@ -132,63 +117,71 @@ function callbackWithError() {
 }
 
 // Promiseのエラーなし
-async function promiseNoError() {
+function promiseNoError() {
   const db = createDb();
   const get = promisify(db.get.bind(db));
 
-  try {
-    await promisify(db.run.bind(db))(
-      "CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT NOT NULL UNIQUE)",
-    );
-    const lastID = await insertRecord(db, "JavaScript");
-    console.log("Inserted record with ID:", lastID);
-
-    const row = await get("SELECT * FROM books WHERE id = ?", [lastID]);
-    console.log("Fetched record:", row);
-
-    await promisify(db.run.bind(db))("DROP TABLE books");
-    console.log("Table dropped.");
-  } catch (err) {
-    console.error("Error:", err.message);
-  } finally {
-    db.close();
-  }
+  promisify(db.run.bind(db))(
+    "CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT NOT NULL UNIQUE)",
+  )
+    .then(() => insertRecord(db, "JavaScript"))
+    .then((lastID) => {
+      console.log("Inserted record with ID:", lastID);
+      return get("SELECT * FROM books WHERE id = ?", [lastID]);
+    })
+    .then((row) => {
+      console.log("Fetched record:", row);
+      return promisify(db.run.bind(db))("DROP TABLE books");
+    })
+    .then(() => {
+      console.log("Table dropped.");
+    })
+    .finally(() => {
+      db.close();
+    });
 }
 
 // Promiseのエラーあり
-async function promiseWithError() {
+function promiseWithError() {
   const db = createDb();
   const get = promisify(db.get.bind(db));
 
-  try {
-    await promisify(db.run.bind(db))(
-      "CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT NOT NULL UNIQUE)",
-    );
-    const lastID = await insertRecord(db, "JavaScript");
-    console.log("Inserted record with ID:", lastID);
-
-    try {
-      await insertRecord(db, "JavaScript");
-    } catch (err) {
-      console.error(err.message);
-    }
-
-    const row = await get("SELECT * FROM books WHERE title = ?", [
-      "存在しないタイトル",
-    ]);
-    if (!row) {
-      console.error("存在しないタイトル");
-    } else {
-      console.log("Fetched record:", row);
-    }
-
-    await promisify(db.run.bind(db))("DROP TABLE books");
-    console.log("Table dropped.");
-  } catch (err) {
-    console.error(err.message);
-  } finally {
-    db.close();
-  }
+  promisify(db.run.bind(db))(
+    "CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT NOT NULL UNIQUE)",
+  )
+    .then(() => insertRecord(db, "JavaScript"))
+    .then((lastID) => {
+      console.log("Inserted record with ID:", lastID);
+      return insertRecord(db, "JavaScript");
+    })
+    .catch((err) => {
+      if (err.code === "SQLITE_CONSTRAINT") {
+        console.error("Unique constraint error:", err.message);
+      } else {
+        throw err;
+      }
+      return null;
+    })
+    .then(() => {
+      return get("SELECT * FROM books WHERE title = ?", ["存在しないタイトル"]);
+    })
+    .then((row) => {
+      if (!row) {
+        console.error("存在しないタイトル");
+      } else {
+        console.log("Fetched record:", row);
+      }
+      return promisify(db.run.bind(db))("DROP TABLE books");
+    })
+    .then(() => {
+      console.log("Table dropped.");
+    })
+    .catch((err) => {
+      console.error("Unexpected error:", err.message);
+    })
+    .finally(() => {
+      db.close();
+    });
 }
 
 // Async/Awaitのエラーなし
@@ -196,23 +189,20 @@ async function asyncAwaitNoError() {
   const db = createDb();
   const get = promisify(db.get.bind(db));
 
-  try {
-    await promisify(db.run.bind(db))(
-      "CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT NOT NULL UNIQUE)",
-    );
-    const lastID = await insertRecord(db, "JavaScript");
-    console.log("Inserted record with ID:", lastID);
+  await promisify(db.run.bind(db))(
+    "CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT NOT NULL UNIQUE)",
+  );
 
-    const row = await get("SELECT * FROM books WHERE id = ?", [lastID]);
-    console.log("Fetched record:", row);
+  const lastID = await insertRecord(db, "JavaScript");
+  console.log("Inserted record with ID:", lastID);
 
-    await promisify(db.run.bind(db))("DROP TABLE books");
-    console.log("Table dropped.");
-  } catch (err) {
-    console.error(err.message);
-  } finally {
-    db.close();
-  }
+  const row = await get("SELECT * FROM books WHERE id = ?", [lastID]);
+  console.log("Fetched record:", row);
+
+  await promisify(db.run.bind(db))("DROP TABLE books");
+  console.log("Table dropped.");
+
+  db.close();
 }
 
 // Async/Awaitのエラーあり
@@ -230,7 +220,11 @@ async function asyncAwaitWithError() {
     try {
       await insertRecord(db, "JavaScript");
     } catch (err) {
-      console.error(err.message);
+      if (err.code === "SQLITE_CONSTRAINT") {
+        console.error("Unique constraint error:", err.message);
+      } else {
+        throw err;
+      }
     }
 
     const row = await get("SELECT * FROM books WHERE title = ?", [
@@ -245,7 +239,7 @@ async function asyncAwaitWithError() {
     await promisify(db.run.bind(db))("DROP TABLE books");
     console.log("Table dropped.");
   } catch (err) {
-    console.error(err.message);
+    console.error("Unexpected error:", err.message);
   } finally {
     db.close();
   }
