@@ -8,24 +8,23 @@ const now = new Date();
 const year = args.y || now.getFullYear();
 const month = args.m || now.getMonth() + 1;
 
-const firstDay = new Date(year, month - 1, 1);
-const lastDay = new Date(year, month, 0);
+const firstDateOfMonth = new Date(year, month - 1, 1);
+const lastDateOfMonth = new Date(year, month, 0);
 
-console.log(`\n      ${month}月 ${year}`);
+console.log(`      ${month}月 ${year}`);
 console.log("日 月 火 水 木 金 土");
 
 let days = [];
-let currentDay = firstDay.getDay();
 
-for (let i = 0; i < currentDay; i++) {
+for (let i = 0; i < firstDateOfMonth.getDay(); i++) {
   days.push("  ");
 }
 
-for (let day = 1; day <= lastDay.getDate(); day++) {
-  const newDay = day.toString().padStart(2, " ");
-  days.push(newDay);
+for (let date = 1; date <= lastDateOfMonth.getDate(); date++) {
+  const formattedDate = date.toString().padStart(2, " ");
+  days.push(formattedDate);
 
-  if ((currentDay + day) % 7 === 0) {
+  if ((firstDateOfMonth.getDay() + date) % 7 === 0) {
     console.log(days.join(" "));
     days = [];
   }
